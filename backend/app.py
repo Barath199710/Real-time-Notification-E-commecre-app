@@ -1,9 +1,10 @@
 import os
 import uuid
 import math
-from datetime import timedelta
+from datetime import timedelta, datetime
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from flask_socketio import SocketIO, emit, join_room, leave_room
 from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_jwt_extended import (
@@ -16,6 +17,9 @@ app = Flask(__name__)
 
 # Enable CORS for all routes (supporting Authorization header)
 CORS(app)
+
+# Initialize SocketIO
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
 UPLOAD_FOLDER = os.path.join('static', 'uploads')
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp'}
@@ -360,6 +364,102 @@ def delete_avatar():
     }), 200
 
 
+# ==============================================================================
+# SOCKET.IO EVENT HANDLERS & REAL-TIME NOTIFICATION ROUTES (TASK 19)
+# ==============================================================================
+
+@socketio.on('connect')
+def on_connect():
+    print(f"[SocketIO] Client connected: {request.sid}")
+
+@socketio.on('disconnect')
+def on_disconnect():
+    print(f"[SocketIO] Client disconnected: {request.sid}")
+
+@socketio.on('join')
+def on_join(data):
+    if not isinstance(data, dict):
+        return
+    user_id = data.get('user_id')
+    role = data.get('role')
+    if user_id:
+        room = f"user_{user_id}"
+        join_room(room)
+        print(f"[SocketIO] User {user_id} joined room {room}")
+    if role == 'admin':
+        join_room('admins')
+        print(f"[SocketIO] User joined room 'admins'")
+    emit('joined', {'status': 'success', 'user_id': user_id, 'role': role})
+
+
+@app.route('/api/notifications', methods=['GET'])
+@jwt_required()
+def get_notifications():
+    user_id = get_jwt_identity()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC",
+        (user_id,)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+
+    notifications = []
+    for row in rows:
+        n = dict(row)
+        n['is_read'] = bool(n.get('is_read', False))
+        notifications.append(n)
+
+    return jsonify({"notifications": notifications}), 200
+
+
+@app.route('/api/notifications/<int:notification_id>/read', methods=['PUT'])
+@jwt_required()
+def mark_notification_read(notification_id):
+    user_id = get_jwt_identity()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?",
+        (notification_id, user_id)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"message": "Notification marked as read"}), 200
+
+
+@app.route('/api/notifications/read-all', methods=['PUT'])
+@jwt_required()
+def mark_all_notifications_read():
+    user_id = get_jwt_identity()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE notifications SET is_read = 1 WHERE user_id = ?",
+        (user_id,)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"message": "All notifications marked as read"}), 200
+
+
+@app.route('/api/notifications/<int:notification_id>', methods=['DELETE'])
+@jwt_required()
+def delete_notification(notification_id):
+    user_id = get_jwt_identity()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "DELETE FROM notifications WHERE id = ? AND user_id = ?",
+        (notification_id, user_id)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"message": "Notification deleted"}), 200
+
+
+
 @app.route('/api/me/stats', methods=['GET'])
 @jwt_required()
 def get_user_stats():
@@ -700,6 +800,54 @@ def create_order():
 
         cursor.execute("SELECT * FROM orders WHERE id = ?", (new_order_id,))
         new_order = dict(cursor.fetchone())
+
+        # Save notification to DB for all admin users
+        msg_text = f"New order #{new_order_id} placed by {user_name} — ₹{total_amount:.2f}"
+        cursor.execute("SELECT id FROM users WHERE role = 'admin'")
+        admin_users = cursor.fetchall()
+
+        for admin in admin_users:
+            cursor.execute(
+                "INSERT INTO notifications (user_id, message, type) VALUES (?, ?, 'order')",
+                (admin['id'], msg_text)
+            )
+        conn.commit()
+
+        # Emit SocketIO event to 'admins' room
+        socketio.emit(
+            'new_notification',
+            {
+                'message': msg_text,
+                'type': 'order',
+                'order_id': new_order_id,
+                'created_at': datetime.now().isoformat()
+            },
+            room='admins'
+        )
+
+        # Bonus Feature: Low Stock Warning Alert
+        if product_id:
+            cursor.execute("SELECT stock, name FROM products WHERE id = ?", (product_id,))
+            p_row = cursor.fetchone()
+            if p_row and p_row['stock'] <= 5:
+                low_stock_msg = f"Low stock alert: '{p_row['name']}' has only {p_row['stock']} left!"
+                for admin in admin_users:
+                    cursor.execute(
+                        "INSERT INTO notifications (user_id, message, type) VALUES (?, ?, 'alert')",
+                        (admin['id'], low_stock_msg)
+                    )
+                conn.commit()
+                socketio.emit(
+                    'new_notification',
+                    {
+                        'message': low_stock_msg,
+                        'type': 'alert',
+                        'product_id': product_id,
+                        'created_at': datetime.now().isoformat()
+                    },
+                    room='admins'
+                )
+
         return jsonify(new_order), 201
     except Exception as e:
         conn.rollback()
@@ -772,6 +920,130 @@ def get_orders():
     }), 200
 
 
+@app.route('/api/orders/<int:order_id>/cancel', methods=['PUT'])
+@jwt_required()
+def cancel_order(order_id):
+    user_id = get_jwt_identity()
+    claims = get_jwt()
+    user_role = claims.get('role', 'customer')
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM orders WHERE id = ?", (order_id,))
+    row = cursor.fetchone()
+
+    if not row:
+        conn.close()
+        return jsonify({"error": "Order not found"}), 404
+
+    order = dict(row)
+    if user_role != 'admin' and str(order.get('user_id')) != str(user_id):
+        conn.close()
+        return jsonify({"error": "Unauthorized to cancel this order"}), 403
+
+    if order['status'] == 'Cancelled':
+        conn.close()
+        return jsonify({"error": "Order is already cancelled"}), 400
+
+    cursor.execute("UPDATE orders SET status = 'Cancelled' WHERE id = ?", (order_id,))
+    conn.commit()
+    conn.close()
+
+    # Emit real-time notification to admins
+    cancel_msg = f"Order #{order_id} has been cancelled by customer."
+    socketio.emit(
+        'new_notification',
+        {
+            'message': cancel_msg,
+            'type': 'alert',
+            'order_id': order_id,
+            'created_at': datetime.now().isoformat()
+        },
+        room='admins'
+    )
+
+    return jsonify({"message": f"Order #{order_id} cancelled successfully", "status": "Cancelled"}), 200
+
+
+@app.route('/api/orders/<int:order_id>', methods=['DELETE'])
+@jwt_required()
+def delete_order(order_id):
+    user_id = get_jwt_identity()
+    claims = get_jwt()
+    user_role = claims.get('role', 'customer')
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM orders WHERE id = ?", (order_id,))
+    row = cursor.fetchone()
+
+    if not row:
+        conn.close()
+        return jsonify({"error": "Order not found"}), 404
+
+    order = dict(row)
+    if user_role != 'admin' and str(order.get('user_id')) != str(user_id):
+        conn.close()
+        return jsonify({"error": "Unauthorized to delete this order"}), 403
+
+    cursor.execute("DELETE FROM orders WHERE id = ?", (order_id,))
+    conn.commit()
+    conn.close()
+
+    return jsonify({"message": f"Order #{order_id} removed successfully"}), 200
+
+
+@app.route('/api/admin/orders/<int:order_id>/status', methods=['PUT'])
+@jwt_required()
+def update_order_status(order_id):
+    claims = get_jwt()
+    if claims.get('role') != 'admin':
+        return jsonify({'error': 'Admin access required'}), 403
+
+    data = request.get_json() or {}
+    new_status = data.get('status')
+    if not new_status:
+        return jsonify({"error": "Status is required"}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM orders WHERE id = ?", (order_id,))
+    row = cursor.fetchone()
+
+    if not row:
+        conn.close()
+        return jsonify({"error": "Order not found"}), 404
+
+    order = dict(row)
+    cursor.execute("UPDATE orders SET status = ? WHERE id = ?", (new_status, order_id))
+    conn.commit()
+
+    # Emit socket notification to customer if user_id exists
+    order_user_id = order.get('user_id')
+    if order_user_id:
+        update_msg = f"Your order #{order_id} status has been updated to '{new_status}'."
+        cursor.execute(
+            "INSERT INTO notifications (user_id, message, type) VALUES (?, ?, 'order')",
+            (order_user_id, update_msg)
+        )
+        conn.commit()
+
+        socketio.emit(
+            'new_notification',
+            {
+                'message': update_msg,
+                'type': 'order',
+                'order_id': order_id,
+                'created_at': datetime.now().isoformat()
+            },
+            room=f"user_{order_user_id}"
+        )
+
+    conn.close()
+    return jsonify({"message": f"Order status updated to {new_status}", "status": new_status}), 200
+
+
+
 if __name__ == '__main__':
     init_db()
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    socketio.run(app, host='0.0.0.0', port=5000, debug=True)

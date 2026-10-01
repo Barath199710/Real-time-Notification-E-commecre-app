@@ -1,6 +1,7 @@
 import React from "react";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
+import NotificationBell from "./NotificationBell";
 import {
   Search,
   PlusCircle,
@@ -274,6 +275,9 @@ export const Navbar = ({
               <Sun size={18} style={{ color: "#f59e0b" }} />
             )}
           </button>
+
+          {/* Real-Time SocketIO Notification Bell */}
+          {isAuthenticated && <NotificationBell />}
 
           {/* User Auth Controls */}
           {isAuthenticated ? (

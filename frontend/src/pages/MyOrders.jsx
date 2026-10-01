@@ -1,30 +1,60 @@
 import React, { useEffect, useState } from 'react';
 import api from '../api/client';
-import { ShoppingBag, Calendar, Package, AlertCircle } from 'lucide-react';
+import { ShoppingBag, Calendar, Package, AlertCircle, Ban, Trash2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../hooks/useToast';
 
 export const MyOrders = () => {
   const { user } = useAuth();
+  const { showToast } = useToast();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    const fetchMyOrders = async () => {
-      try {
-        setLoading(true);
-        const res = await api.get('/api/orders/my');
-        setOrders(res.data.orders || []);
-      } catch (err) {
-        console.error('Error fetching user orders:', err);
-        setError(err.response?.data?.error || 'Failed to fetch personal orders.');
-      } finally {
-        setLoading(false);
-      }
-    };
+  const fetchMyOrders = async () => {
+    try {
+      setLoading(true);
+      const res = await api.get('/api/orders/my');
+      setOrders(res.data.orders || []);
+    } catch (err) {
+      console.error('Error fetching user orders:', err);
+      setError(err.response?.data?.error || 'Failed to fetch personal orders.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  useEffect(() => {
     fetchMyOrders();
   }, []);
+
+  const handleCancelOrder = async (orderId) => {
+    if (!window.confirm(`Are you sure you want to cancel Order #${orderId}?`)) return;
+
+    try {
+      await api.put(`/api/orders/${orderId}/cancel`);
+      showToast(`Order #${orderId} has been cancelled.`, 'success');
+      setOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? { ...o, status: 'Cancelled' } : o))
+      );
+    } catch (err) {
+      console.error('Failed to cancel order:', err);
+      showToast(err.response?.data?.error || 'Failed to cancel order.', 'error');
+    }
+  };
+
+  const handleDeleteOrder = async (orderId) => {
+    if (!window.confirm(`Are you sure you want to remove Order #${orderId} from history?`)) return;
+
+    try {
+      await api.delete(`/api/orders/${orderId}`);
+      showToast(`Order #${orderId} removed.`, 'success');
+      setOrders((prev) => prev.filter((o) => o.id !== orderId));
+    } catch (err) {
+      console.error('Failed to delete order:', err);
+      showToast(err.response?.data?.error || 'Failed to remove order.', 'error');
+    }
+  };
 
   if (loading) {
     return (
@@ -54,7 +84,7 @@ export const MyOrders = () => {
         </div>
         <div>
           <h2 style={{ fontSize: '24px', fontWeight: '700', color: 'var(--text-primary)', margin: 0 }}>
-            My Orders (JWT Protected)
+            My Orders
           </h2>
           <p style={{ color: 'var(--text-secondary)', fontSize: '14px', margin: '2px 0 0' }}>
             Viewing orders for signed-in user: <strong>{user?.name}</strong> ({user?.email})
@@ -108,6 +138,8 @@ export const MyOrders = () => {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '16px',
                 transition: 'var(--theme-transition)',
               }}
             >
@@ -127,12 +159,16 @@ export const MyOrders = () => {
                           ? 'rgba(16, 185, 129, 0.15)'
                           : order.status === 'Shipped'
                           ? 'rgba(99, 102, 241, 0.15)'
+                          : order.status === 'Cancelled'
+                          ? 'rgba(239, 68, 68, 0.15)'
                           : 'rgba(245, 158, 11, 0.15)',
                       color:
                         order.status === 'Delivered'
                           ? 'var(--success-color)'
                           : order.status === 'Shipped'
                           ? 'var(--accent-primary)'
+                          : order.status === 'Cancelled'
+                          ? 'var(--error-color)'
                           : 'var(--warning-color)',
                       border: '1px solid var(--border-color)',
                     }}
@@ -148,10 +184,54 @@ export const MyOrders = () => {
                 </div>
               </div>
 
-              <div style={{ textAlign: 'right' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                 <span style={{ fontSize: '18px', fontWeight: '700', color: 'var(--text-primary)' }}>
                   ${Number(order.total_amount).toFixed(2)}
                 </span>
+
+                {/* Cancel & Remove Action Buttons */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {order.status !== 'Cancelled' && order.status !== 'Delivered' && (
+                    <button
+                      onClick={() => handleCancelOrder(order.id)}
+                      title="Cancel Order"
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: '8px',
+                        border: '1px solid #ef4444',
+                        background: 'rgba(239, 68, 68, 0.1)',
+                        color: '#ef4444',
+                        fontSize: '13px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
+                    >
+                      <Ban size={14} /> Cancel
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() => handleDeleteOrder(order.id)}
+                    title="Remove Order"
+                    style={{
+                      padding: '6px 10px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-color)',
+                      background: 'var(--bg-surface-elevated)',
+                      color: 'var(--text-muted)',
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </div>
             </div>
           ))}

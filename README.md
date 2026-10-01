@@ -1,47 +1,56 @@
-# Task 15 – Pagination + Debounced Search E-Commerce App
+# Task 19 – Real-Time Notifications E-Commerce App
 
-A modern full-stack web application with SQLite database pagination (`LIMIT` / `OFFSET`), debounced search via custom React hook (`useDebounce`), reusable `Pagination` component, and animated skeleton loaders.
+A modern full-stack web application with **Flask-SocketIO**, **React**, and **Socket.IO Client** implementing real-time event-driven notifications across user sessions.
 
-## Features Included
+## 🚀 Features Included in Task 19
 
-1. **SQL Database Pagination (`LIMIT` / `OFFSET`):**
-   - Backend `GET /api/products` & `GET /api/orders` calculate exact `OFFSET = (page - 1) * limit`.
-   - Returns metadata `{ products, total, page, limit, total_pages }`.
-2. **Debounced Search Hook (`useDebounce`):**
-   - Instant typing feedback on input state.
-   - API requests delayed by `300ms` with automatic `clearTimeout` timer cleanup.
-3. **Reusable Pagination Component (`Pagination.jsx`):**
-   - Numbered page buttons, Prev/Next disabled states, Page X of Y indicator.
-   - Items-per-page selector (8, 16, 24, 32).
-   - Reused across Customer Catalog (`Home.jsx`) and Admin Orders (`AdminOrders.jsx`).
-4. **Automatic Page Reset:**
-   - Resets `currentPage` to 1 automatically on search query or filter changes.
-5. **Bonus Features:**
-   - Skeleton loader cards while data fetches.
-   - Real-time API Call Counter badge in header.
-   - Scroll-to-top on page change.
+1. **WebSockets & Real-Time Event Communication:**
+   - Persistent bidirectional WebSocket connection using `Flask-SocketIO` and `socket.io-client`.
+   - Dynamic room assignment (`join_room('admins')` & `join_room('user_{id}')`).
+   - Server-pushed `new_notification` events emitted live without polling or page refreshes.
+
+2. **Database Persistence:**
+   - `notifications` SQLite table (`id`, `user_id`, `message`, `type`, `is_read`, `created_at`).
+   - Hybrid architecture: Notifications persist in DB and survive browser page refreshes via REST API (`GET /api/notifications`).
+
+3. **Frontend Real-Time Notification Bell Component:**
+   - Interactive `NotificationBell.jsx` component in Navbar.
+   - Live red badge counter showing unread notifications.
+   - Dropdown panel displaying relative time ("2 mins ago"), read/unread indicator, type icons (`order` 🛒, `alert` ⚠️, `info` ℹ️).
+   - "Mark all as read" & individual delete functionality.
+
+4. **Bonus Features:**
+   - **Low Stock Warning Alert**: Automatically triggers an alert notification to admins when product stock drops to 5 or lower.
+   - **Sound Ping Notification**: Plays a subtle audio ping when a new real-time notification arrives.
+   - **Browser Push Notifications**: Optional OS native notification support via standard Web Notification API.
 
 ---
 
-## How to Run
+## 🛠️ How to Run
 
-### 1. Start Backend (Flask API)
+### 1. Start Backend (Flask + SocketIO API)
 ```bash
 cd backend
 pip install -r requirements.txt
 python app.py
 ```
-*Backend runs on `http://localhost:5000` and automatically seeds 48 sample products and 30 sample orders.*
+*Backend server runs on `http://localhost:5000` with WebSocket support.*
 
-### 2. Start Frontend (React + Vite)
+### 2. Run Backend Unit Tests
+```bash
+cd backend
+python test_task19_api.py
+```
+
+### 3. Start Frontend (React + Socket.IO)
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
-*Frontend runs on `http://localhost:5173`.*
+*Frontend app runs on `http://localhost:5173`.*
 
 ---
 
-## Technical Answers & Write-Up
-See [`TASK_15_WRITEUP.md`](./TASK_15_WRITEUP.md) for full answers to all 4 submission questions.
+## 📄 Submission Write-Up & Technical Answers
+See [`TASK_19_WRITEUP.md`](./TASK_19_WRITEUP.md) for full answers to all submission questions.

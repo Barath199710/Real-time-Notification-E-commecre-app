@@ -70,7 +70,7 @@ const MainApp = () => {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#f8fafc', color: '#64748b' }}>
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: 'var(--bg-primary)', color: 'var(--text-muted)' }}>
         <p style={{ fontSize: '16px', fontWeight: '500' }}>Initializing JWT Auth session...</p>
       </div>
     );
@@ -98,19 +98,19 @@ const MainApp = () => {
         }
         if (!isAdmin) {
           return (
-            <div style={{ maxWidth: '600px', margin: '60px auto', padding: '32px', background: '#fff', borderRadius: '16px', border: '1px solid #fee2e2', textAlign: 'center', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.05)' }}>
-              <div style={{ width: '56px', height: '56px', borderRadius: '14px', background: '#fef2f2', color: '#dc2626', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
+            <div style={{ maxWidth: '600px', margin: '60px auto', padding: '32px', background: 'var(--card-bg)', borderRadius: '16px', border: '1px solid var(--border-color)', textAlign: 'center', boxShadow: 'var(--shadow-md)' }}>
+              <div style={{ width: '56px', height: '56px', borderRadius: '14px', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
                 <ShieldAlert size={30} />
               </div>
-              <h2 style={{ fontSize: '20px', fontWeight: '700', color: '#991b1b', margin: '0 0 8px' }}>
+              <h2 style={{ fontSize: '20px', fontWeight: '700', color: 'var(--text-primary)', margin: '0 0 8px' }}>
                 403 — Access Denied (Admin Required)
               </h2>
-              <p style={{ color: '#64748b', fontSize: '14px', margin: '0 0 20px' }}>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '14px', margin: '0 0 20px' }}>
                 Your current JWT token role is <strong>"{user?.role}"</strong>. Admin credentials (e.g. <code>admin@example.com</code>) are required to access this dashboard.
               </p>
               <button
                 onClick={() => setActiveTab('login')}
-                style={{ padding: '10px 20px', borderRadius: '8px', border: 'none', background: '#4f46e5', color: '#fff', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}
+                style={{ padding: '10px 20px', borderRadius: '8px', border: 'none', background: 'var(--accent-primary)', color: '#fff', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}
               >
                 Switch to Admin Account
               </button>
@@ -135,7 +135,7 @@ const MainApp = () => {
   };
 
   return (
-    <div className="app-container" style={{ minHeight: '100vh', background: '#f8fafc' }}>
+    <div className="app-container" style={{ minHeight: '100vh', background: 'var(--bg-primary)', color: 'var(--text-primary)', transition: 'var(--theme-transition)' }}>
       <Navbar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -173,11 +173,15 @@ const MainApp = () => {
   );
 };
 
+import { SocketProvider } from './context/SocketContext';
+
 export default function App() {
   return (
     <ToastProvider>
       <AuthProvider>
-        <MainApp />
+        <SocketProvider>
+          <MainApp />
+        </SocketProvider>
       </AuthProvider>
     </ToastProvider>
   );

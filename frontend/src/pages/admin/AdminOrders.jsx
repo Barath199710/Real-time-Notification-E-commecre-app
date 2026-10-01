@@ -3,7 +3,7 @@ import { Pagination } from '../../components/Pagination';
 import { useDebounce } from '../../hooks/useDebounce';
 import { api } from '../../api/client';
 import { useToast } from '../../hooks/useToast';
-import { Search, RefreshCw, ShoppingBag, Clock, CheckCircle2, Truck, XCircle } from 'lucide-react';
+import { Search, RefreshCw, ShoppingBag, Clock, CheckCircle2, Truck, XCircle, Trash2 } from 'lucide-react';
 
 export const AdminOrders = ({ onIncrementApiCounter }) => {
   const { showToast } = useToast();
@@ -60,6 +60,33 @@ export const AdminOrders = ({ onIncrementApiCounter }) => {
   useEffect(() => {
     fetchOrders();
   }, [fetchOrders]);
+
+  const handleStatusChange = async (orderId, newStatus) => {
+    try {
+      await api.put(`/api/admin/orders/${orderId}/status`, { status: newStatus });
+      showToast(`Order #${orderId} status updated to "${newStatus}"!`, 'success');
+      setOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? { ...o, status: newStatus } : o))
+      );
+    } catch (err) {
+      console.error('Failed to update status:', err);
+      showToast(err.response?.data?.error || 'Failed to update status.', 'error');
+    }
+  };
+
+  const handleDeleteOrder = async (orderId) => {
+    if (!window.confirm(`Are you sure you want to permanently delete Order #${orderId}?`)) return;
+
+    try {
+      await api.delete(`/api/orders/${orderId}`);
+      showToast(`Order #${orderId} deleted successfully.`, 'success');
+      setOrders((prev) => prev.filter((o) => o.id !== orderId));
+      setTotalOrders((prev) => Math.max(0, prev - 1));
+    } catch (err) {
+      console.error('Failed to delete order:', err);
+      showToast(err.response?.data?.error || 'Failed to delete order.', 'error');
+    }
+  };
 
   const getStatusBadge = (status) => {
     switch (status) {
@@ -159,20 +186,21 @@ export const AdminOrders = ({ onIncrementApiCounter }) => {
               <th>Total Amount</th>
               <th>Status</th>
               <th>Order Date</th>
+              <th style={{ textAlign: 'center' }}>Manage / Actions</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               Array.from({ length: limit }).map((_, idx) => (
                 <tr key={idx}>
-                  <td colSpan={6} style={{ padding: '16px', textAlign: 'center' }}>
+                  <td colSpan={7} style={{ padding: '16px', textAlign: 'center' }}>
                     <div className="skeleton-box" style={{ height: '24px', width: '100%' }}></div>
                   </td>
                 </tr>
               ))
             ) : orders.length === 0 ? (
               <tr>
-                <td colSpan={6} style={{ padding: '48px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                <td colSpan={7} style={{ padding: '48px', textAlign: 'center', color: 'var(--text-muted)' }}>
                   <ShoppingBag size={36} style={{ opacity: 0.5, marginBottom: '8px' }} />
                   <p>No orders found matching criteria.</p>
                 </td>
@@ -205,6 +233,50 @@ export const AdminOrders = ({ onIncrementApiCounter }) => {
                       minute: '2-digit'
                     })}
                   </td>
+                  <td style={{ textAlign: 'center' }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                      {/* Change Status Dropdown */}
+                      <select
+                        value={order.status}
+                        onChange={(e) => handleStatusChange(order.id, e.target.value)}
+                        style={{
+                          padding: '4px 8px',
+                          borderRadius: '6px',
+                          border: '1px solid var(--border-color)',
+                          background: 'var(--bg-surface-elevated)',
+                          color: 'var(--text-primary)',
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <option value="Pending">Pending</option>
+                        <option value="Processing">Processing</option>
+                        <option value="Shipped">Shipped</option>
+                        <option value="Delivered">Delivered</option>
+                        <option value="Cancelled">Cancelled</option>
+                      </select>
+
+                      {/* Delete Order Button */}
+                      <button
+                        onClick={() => handleDeleteOrder(order.id)}
+                        title="Delete Order"
+                        style={{
+                          padding: '6px',
+                          borderRadius: '6px',
+                          border: '1px solid #ef4444',
+                          background: 'rgba(239, 68, 68, 0.1)',
+                          color: '#ef4444',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ))
             )}
@@ -227,3 +299,5 @@ export const AdminOrders = ({ onIncrementApiCounter }) => {
     </div>
   );
 };
+
+export default AdminOrders;
